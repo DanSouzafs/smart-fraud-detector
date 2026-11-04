@@ -1,60 +1,40 @@
 # Detecção de Fraude em Cartões de Crédito 💳
 
-Este repositório apresenta um projeto fim-a-fim de ciência de dados focado na detecção de transações fraudulentas usando dados reais de cartão de crédito. O principal desafio técnico abordado aqui é o **desbalanceamento extremo das classes**, onde apenas **0,17%** de todas as transações correspondem a fraudes.
+Projeto de ciência de dados para detectar transações fraudulentas no dataset público de cartões de crédito. O [notebook executável, com células e saídas salvas](deteccao_fraude_cartao_credito.ipynb) também pode ser aberto no [Google Colab](https://colab.research.google.com/drive/1iHpy80wBIrCUQQxLJwcmsLcJ9f293aeU?usp=sharing).
 
-## 🔍 O Problema de Negócio & Desbalanceamento
-No cenário de prevenção a fraudes financeiras, a acurácia global é uma métrica enganosa. Se criarmos um classificador ingênuo que sempre prevê uma transação como legítima (Classe 0), ele obterá uma acurácia de **99,83%**. Contudo, esse modelo não impedirá nenhuma perda financeira.
+## Problema e desbalanceamento
 
-Por essa razão, o foco deste projeto está voltado às métricas de:
-* **Recall (Sensibilidade):** A proporção de fraudes reais que conseguimos detectar.
-* **Precisão (Precision):** A proporção de alarmes que são fraudes reais (evitando frustrar o cliente legítimo com bloqueios indevidos).
-* **F1-Score:** O equilíbrio harmônico entre precisão e recall.
-* **PR AUC (Área Sob a Curva Precision-Recall):** A métrica de ouro para comparar modelos em dados muito desbalanceados.
+Fraudes correspondem a apenas **0,1727%** das 284.807 transações. Acurácia isolada é enganosa: prever tudo como legítimo alcançaria aproximadamente **99,83%**, mas não detectaria fraude. Por isso, a comparação prioriza precisão, recall e F1 da classe fraude; a curva Precision-Recall ajuda a avaliar modelos sem ser dominada pela classe majoritária.
 
----
+## Preparação dos dados
 
-## 🛠️ Preparação dos Dados
-Os dados brutos consistem em transações financeiras reais anonimizadas via PCA (V1 a V28), com exceção das colunas `Time` e `Amount` (Valor).
-1. **Tratamento de Outliers:** Aplicamos a transformação logarítmica na variável `Amount` (`Log_Amount = log1p(Amount)`) para suavizar o impacto de valores de transações extremamente altos e distorcidos.
-2. **Padronização:** Utilizamos o `StandardScaler` do *scikit-learn* para colocar todos os recursos na mesma escala.
-3. **Divisão Estratificada:** Dividimos os dados em 70% para treino e 30% para teste, garantindo que a raríssima proporção de fraudes ($0,17\%$) fosse mantida perfeitamente em ambos os conjuntos (`stratify=y`).
+- O CSV é carregado pelo próprio notebook de `https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv`. O dataset não está armazenado no repositório.
+- `Time` é removida; `Amount` é transformada em `Log_Amount = log1p(Amount)` e a coluna original `Amount` é descartada.
+- A divisão é estratificada: 30% para teste; os 70% restantes são separados em treino (80%) e validação (20%). Assim, a divisão final é 56% treino, 14% validação e 30% teste.
+- O `StandardScaler` é ajustado somente no treino e aplicado à validação e ao teste, evitando vazamento de dados.
 
----
+## Comparação de modelos
 
-## 📊 Comparação entre Modelos
+Os resultados abaixo são do teste, usando o limiar padrão **0,5** para todos os modelos. Regressão Logística e Random Forest usam pesos de classe; XGBoost usa `scale_pos_weight`. **PR AUC** é a área trapezoidal da curva Precision-Recall; **Average Precision (AP)** é reportada separadamente, pois usa outra agregação.
 
-Para resolver o desbalanceamento, aplicamos abordagens focadas em pesos de classes (`class_weight` e `scale_pos_weight`). Os resultados obtidos no conjunto de testes foram:
+| Modelo | Precisão (fraude) | Recall (fraude) | F1 (fraude) | PR AUC trapezoidal | AP |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Regressão Logística | 0,0619 | 0,8784 | 0,1157 | 0,7464 | 0,7093 |
+| Random Forest | 0,8527 | 0,7432 | 0,7942 | 0,7719 | 0,7724 |
+| XGBoost | 0,8864 | 0,7905 | 0,8357 | 0,8334 | 0,8335 |
 
-| Modelo | Precisão (Fraude) | Recall (Fraude) | F1-Score (Fraude) | PR AUC (Métrica de Ouro) |
-| :--- | :---: | :---: | :---: | :---: |
-| **Regressão Logística** *(Baseline)* | 0.06 (6%) | **0.88 (88%)** | 0.12 | 0.7337 |
-| **Random Forest** | 0.84 (84%) | 0.76 (76%) | 0.79 | 0.7717 |
-| **XGBoost** | **0.89 (89%)** | 0.78 (78%) | **0.83** | **0.8360** |
+## Limiar de decisão
 
-### Principais Insights:
-* A **Regressão Logística** entrega um Recall alto, mas sua precisão de apenas 6% significa que para cada fraude detectada, o banco bloquearia injustamente aproximadamente 15 clientes normais.
-* O **XGBoost** destacou-se como o modelo ideal de produção, entregando **89% de Precisão** e **78% de Recall**, capturando a imensa maioria das fraudes com baixíssima taxa de alarmes falsos, o que preserva a experiência do cliente.
+Para o XGBoost, selecionei o limiar que maximiza o F1 **na validação**, sem usar o teste para otimizar. O limiar encontrado foi **0,883833** (F1 de validação: 0,8976). No teste, esse limiar obteve **precisão 0,9262**, **recall 0,7635** e **F1 0,8370**. Em comparação ao limiar padrão 0,5, aumenta a precisão e reduz um pouco o recall; a escolha reflete esse compromisso e deve ser ajustada conforme o custo operacional de falsos positivos e fraudes não detectadas.
 
----
+## O que SHAP mostrou
 
-## 🧠 Explicabilidade das Decisões
-O modelo de **Random Forest** nos permitiu extrair a relevância intrínseca dos atributos. As quatro variáveis que mais pesaram no processo de decisão para classificar uma transação como fraudulenta foram:
-1. **V10**
-2. **V14**
-3. **V4**
-4. **V12**
+A explicação SHAP foi calculada para o **Random Forest**, em uma amostra de 1.000 transações do teste. Pela média do valor absoluto de SHAP, os quatro atributos mais influentes foram **V4 (0,0707), V14 (0,0692), V12 (0,0669) e V10 (0,0534)**, seguidos por V11. O gráfico beeswarm salvo no notebook mostra a direção e a dispersão das contribuições para a classe fraude. SHAP descreve a influência do modelo, não causalidade.
 
-Essas componentes (derivadas do PCA original) são os principais indicadores de comportamento anômalo e padrões que distinguem compras normais de invasões de conta.
+## O que foi ampliado em relação ao exercício inicial
 
----
+Em relação ao exemplo inicial da Expert neste notebook (dados sintéticos e Isolation Forest), ampliei o projeto para o dataset real rotulado e acrescentei preparação de dados sem vazamento, comparação de três classificadores supervisionados com tratamento do desbalanceamento, métricas e curva Precision-Recall, seleção do limiar em validação e explicabilidade SHAP.
 
-## ⚙️ Tecnologias Utilizadas
-* **Python 3**
-* **Pandas & NumPy** (Manipulação de Dados)
-* **Scikit-Learn** (Pré-processamento, Divisão, Métricas e Modelagem)
-* **XGBoost** (Classificador Avançado)
-* **Matplotlib & Seaborn** (Visualizações Gráficas)
+## Execução
 
----
-
-*Nota: Os dados utilizados neste projeto são públicos e foram obtidos diretamente do repositório oficial do Google Storage via API no momento da execução do notebook, protegendo a privacidade e conformidade.*
+Abra o notebook no Google Colab ou em Jupyter. Ele carrega os dados pela URL, treina os modelos e contém saídas salvas, relatórios de métricas e gráficos. A célula SHAP instala essa dependência quando executada.
